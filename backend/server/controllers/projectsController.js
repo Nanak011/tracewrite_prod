@@ -80,15 +80,6 @@ async function getProjectDetails(req, res) {
       [projectId]
     );
 
-    const assignments = await query(
-      `SELECT pa.*, u.name
-       FROM page_assignments pa
-       JOIN users u ON u.id = pa.user_id
-       WHERE pa.project_id = ?
-       ORDER BY pa.start_page ASC`,
-      [projectId]
-    );
-
     res.json({ project: projectRows[0], members, assignments });
   } catch (err) {
     res.status(500).json({ error: err.message });
