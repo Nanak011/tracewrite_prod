@@ -1,6 +1,6 @@
 All members:
-clone the repository
-edit the env file
+clone the repository git clone 
+edit the env file 
 cd frontend || npm install
 cd backend || npm install
 
@@ -8,3 +8,4 @@ For backend:
 
 
 npm install nodemailer bcryptjs sanitize-html pdfkit express-session  
+

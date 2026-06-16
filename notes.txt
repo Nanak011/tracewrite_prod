@@ -1,0 +1,782 @@
+
+## Phase 2: Authentication System
+**Objective:** Build login, registration, session management, and OTP/MFA flow.
+**Duration:** 2-3 days
+**Depends on:** Phase 1
+
+### Files to Read First
+- `backend/server/controllers/authController.js` (full file)
+- `backend/server/controllers/authMiddleware.js` (full file)
+- `backend/server/routes/auth.js` (full file)
+
+### Files to Recreate
+
+1. **backend/server/controllers/authMiddleware.js** (complete rewrite)
+   - **Export middleware functions**:
+     - `requireAuth(req, res, next)`: Check if req.session.user exists, if not return 401, else next()
+     - `requireProjectMember(req, res, next)`: Check if user is member of req.params.projectId, set req.projectRole
+     - `requireProjectOwner(req, res, next)`: Check if user is Owner of project, 403 if not
+   - **Implementation**:
+     - Query project_members table to verify membership
+     - Extract role from membership and attach to req.projectRole
+     - Use try-catch and return proper error responses
+
+2. **backend/server/controllers/authController.js** (complete rewrite)
+   - **Export async functions**:
+     - `register(req, res)`: Create user account
+       - Extract name, email, password from req.body
+       - Hash password using bcrypt
+       - Check if email already exists
+       - Insert into users table
+       - Return user object (without password)
+     - `login(req, res)`: Authenticate user
+       - Extract email, password from req.body
+       - Query users table by email
+       - Compare hashed password with bcrypt
+       - Create session: req.session.user = { id, name, email, color }
+       - Return user object
+     - `logout(req, res)`: Destroy session
+       - req.session.destroy()
+       - Return success message
+     - `getCurrentUser(req, res)`: Return current user from session
+       - Return req.session.user or 401 if not authenticated
+     - `verifyEmail(req, res)`: Mark email as verified
+     - `enableMFA(req, res)`: Store MFA secret or flag
+   - **Error handling**:
+     - Invalid credentials: 401 Unauthorized
+     - Email already exists: 409 Conflict
+     - Database errors: 500 Internal Server Error
+
+3. **backend/server/routes/auth.js** (complete rewrite)
+   - **Create Express router**:
+     - `const router = require("express").Router()`
+   - **Define routes**:
+     - `POST /register`: Call authController.register, validate input
+     - `POST /login`: Call authController.login, validate input
+     - `POST /logout`: requireAuth middleware, call authController.logout
+     - `GET /me`: requireAuth middleware, call authController.getCurrentUser
+   - **Input validation**:
+     - Check email format with regex
+     - Check password length >= 8
+     - Check name not empty
+   - **Return proper HTTP status codes**:
+     - 200 OK for success
+     - 400 Bad Request for validation errors
+     - 401 Unauthorized for auth failures
+     - 409 Conflict for duplicate email
+
+### Key Logic Notes for Phase 2
+- Password hashing: use bcrypt with 10 salt rounds
+- Session storage: can use memory-based for MVP, move to database later
+- Email validation: regex `^[^\s@]+@[^\s@]+\.[^\s@]+$`
+- User color: assign from a palette like ["#FF6B6B", "#4ECDC4", "#45B7D1", ...] based on user ID mod length
+- Session middleware must run before these routes so req.session is available
+- All functions should be async/await
+
+---
+
+## Phase 3: Projects & Collaboration Core
+**Objective:** Build project CRUD, member management, invitations, and access control.
+**Duration:** 2-3 days
+**Depends on:** Phase 2
+
+### Files to Read First
+- `backend/server/controllers/projectsController.js` (full file)
+- `backend/server/controllers/projectAccess.js` (full file)
+- `backend/server/routes/projects.js` (full file)
+
+### Files to Recreate
+
+1. **backend/server/controllers/projectAccess.js** (complete rewrite)
+   - **Export middleware functions**:
+     - `requireProjectMember(req, res, next)`:
+       - Extract projectId from req.params.projectId
+       - Query: SELECT role FROM project_members WHERE project_id = ? AND user_id = ?
+       - If not found, return 403 Forbidden
+       - Set req.projectRole = result.role
+       - Call next()
+     - `requireProjectOwner(req, res, next)`:
+       - Call requireProjectMember first to verify membership
+       - Check if req.projectRole === "Owner"
+       - If not, return 403 Forbidden
+       - Call next()
+
+2. **backend/server/controllers/projectsController.js** (complete rewrite, ~400 lines)
+   - **Export async functions**:
+     
+     - `createProject(req, res)`:
+       - Input: title, description from req.body
+       - INSERT into projects: (title, description, owner_id, total_pages=1, created_at)
+       - INSERT into project_members: (project_id, user_id=owner_id, role='Owner')
+       - INSERT into project_documents: (project_id, content="<p><br></p>")
+       - Return created project with id and role
+     
+     - `listProjects(req, res)`:
+       - Query: SELECT p.*, pm.role FROM projects p JOIN project_members pm ON p.id = pm.project_id WHERE pm.user_id = ? ORDER BY p.created_at DESC
+       - Return array of projects with user's role for each
+     
+     - `getProject(req, res)` [requireProjectMember]:
+       - Query: SELECT * FROM projects WHERE id = ?
+       - Query: SELECT u.id, u.name, u.email, pm.role FROM project_members pm JOIN users u ON u.id = pm.user_id WHERE pm.project_id = ?
+       - Return project with members array
+     
+     - `updateProject(req, res)` [requireProjectOwner]:
+       - Input: title, description
+       - UPDATE projects SET title=?, description=? WHERE id=?
+       - Return updated project
+     
+     - `deleteProject(req, res)` [requireProjectOwner]:
+       - DELETE FROM projects WHERE id=?
+       - This cascades to delete project_members, pages, documents, etc. due to FK constraints
+       - Return 200 success
+     
+     - `inviteUser(req, res)` [requireProjectOwner]:
+       - Input: invitee_id or invitee_email, role ('Editor' or 'Viewer')
+       - Query for user by id or email
+       - Check user not already in project_members
+       - INSERT into project_invitations: (project_id, inviter_id, invitee_id, role, status='Pending')
+       - Return invitation object
+     
+     - `acceptInvitation(req, res)` [requireAuth]:
+       - Input: invitation_id
+       - Query: SELECT * FROM project_invitations WHERE id=? AND invitee_id=?
+       - If not found, return 404
+       - UPDATE project_invitations SET status='Accepted', responded_at=NOW()
+       - INSERT into project_members: (project_id, user_id, role)
+       - Return success
+     
+     - `rejectInvitation(req, res)` [requireAuth]:
+       - Input: invitation_id
+       - Query and verify ownership
+       - UPDATE project_invitations SET status='Rejected', responded_at=NOW()
+       - Return success
+     
+     - `listInvitations(req, res)` [requireAuth]:
+       - Query: SELECT pi.*, p.title, u.name as inviter_name FROM project_invitations pi JOIN projects p ON p.id = pi.project_id JOIN users u ON u.id = pi.inviter_id WHERE pi.invitee_id=? AND pi.status='Pending'
+       - Return array of pending invitations
+     
+     - `removeMember(req, res)` [requireProjectOwner]:
+       - Input: memberId (user_id to remove)
+       - Prevent removing the owner
+       - DELETE FROM project_members WHERE project_id=? AND user_id=?
+       - DELETE FROM page_assignments WHERE project_id=? AND user_id=?
+       - Return success
+     
+     - `assignPages(req, res)` [requireProjectOwner]:
+       - Input: userId, startPage, endPage
+       - INSERT or UPDATE page_assignments
+       - Return success
+
+3. **backend/server/routes/projects.js** (complete rewrite, ~50 lines)
+   - Create router
+   - Mount all endpoints:
+     - `POST /`: createProject (requireAuth)
+     - `GET /`: listProjects (requireAuth)
+     - `GET /:projectId`: getProject (requireAuth, requireProjectMember)
+     - `PUT /:projectId`: updateProject (requireAuth, requireProjectOwner)
+     - `DELETE /:projectId`: deleteProject (requireAuth, requireProjectOwner)
+     - `POST /:projectId/invite`: inviteUser (requireAuth, requireProjectOwner)
+     - `POST /invitations/:invitationId/accept`: acceptInvitation (requireAuth)
+     - `POST /invitations/:invitationId/reject`: rejectInvitation (requireAuth)
+     - `GET /invitations`: listInvitations (requireAuth)
+     - `DELETE /:projectId/members/:userId`: removeMember (requireAuth, requireProjectOwner)
+     - `POST /:projectId/assign-pages`: assignPages (requireAuth, requireProjectOwner)
+
+### Key Logic Notes for Phase 3
+- Owner cannot be removed from a project (check in removeMember)
+- When a project is deleted, all related data cascades due to FK constraints
+- Page assignments are ranges [startPage, endPage] inclusive
+- Invitations can only be sent by project owner
+- Users can only see projects they are members of
+- Roles are: Owner (full control), Editor (can edit pages), Viewer (read-only)
+
+---
+
+## Phase 4: Editor & Realtime Collaboration
+**Objective:** Build document save/load, page management, and Socket.IO realtime synchronization.
+**Duration:** 3-4 days
+**Depends on:** Phase 3
+
+### Files to Read First
+- `backend/server/controllers/editorController.js` (full file)
+- `backend/server/routes/editor.js` (full file)
+- `backend/server/sockets/index.js` (full file)
+- `backend/server/serverHelpers.js` (full file)
+
+### Files to Recreate
+
+1. **backend/server/serverHelpers.js** (complete rewrite, ~80 lines)
+   - **Export helper functions**:
+     - `sanitizeEditorHtml(html)`:
+       - Use DOMPurify-like logic or regex to strip dangerous tags
+       - Keep: p, div, h1, h2, h3, strong, em, u, br, img, table, tr, td, th, ol, li, ul, span
+       - Strip: script, iframe, onclick, onerror, etc.
+       - Return cleaned HTML string
+     - `countWords(text)`:
+       - Split by whitespace, filter empty, return count
+     - `escapeHtml(str)`:
+       - Replace &, <, >, ", ' with HTML entities
+       - Return escaped string
+     - `buildColoredDelta(delta, userColor)`:
+       - Transform Quill delta to add user color to text insertions
+       - Return delta with color attributes
+
+2. **backend/server/controllers/editorController.js** (complete rewrite, ~250 lines)
+   - **Export async functions**:
+     
+     - `getProjectDocument(req, res)` [requireProjectMember]:
+       - projectId from params
+       - SELECT FROM project_documents WHERE project_id=?
+       - If not exists, INSERT with default "<p><br></p>"
+       - Return { document, canEdit: req.projectRole !== "Viewer" }
+     
+     - `saveProjectDocument(req, res)` [requireProjectMember]:
+       - Check: req.projectRole !== "Viewer" else 403
+       - projectId, content from body
+       - Sanitize content
+       - INSERT ... ON DUPLICATE KEY UPDATE
+       - Return { message: "Document saved" }
+     
+     - `getProjectPages(req, res)` [requireProjectMember]:
+       - Query pages table with page_number ordered ASC
+       - Return array of pages
+     
+     - `getSinglePage(req, res)` [requireProjectMember]:
+       - Query pages WHERE project_id=? AND page_number=?
+       - Check page assignment for this user if Editor role
+       - Return page content
+     
+     - `savePage(req, res)` [requireProjectMember]:
+       - Check: req.projectRole !== "Viewer" else 403
+       - For Editor role: verify user has this page assigned
+       - UPDATE pages SET content=?, last_edited_by=?, updated_at=NOW()
+       - Return { message: "Page saved" }
+     
+     - `logContribution(req, res)` [requireAuth]:
+       - project_id, page_number, action_type, word_count, time_spent from body
+       - INSERT into contribution_logs
+       - Return { message: "Logged" }
+
+3. **backend/server/routes/editor.js** (complete rewrite, ~30 lines)
+   - Create router
+   - Mount endpoints:
+     - `GET /:projectId/document`: getProjectDocument
+     - `POST /:projectId/document`: saveProjectDocument
+     - `GET /:projectId/pages`: getProjectPages
+     - `GET /:projectId/pages/:pageNumber`: getSinglePage
+     - `POST /:projectId/pages/:pageNumber`: savePage
+     - `POST /contribution-log`: logContribution
+
+4. **backend/server/sockets/index.js** (complete rewrite, ~300 lines)
+   - **Export `registerSocketHandlers(io)` function**:
+     - Called once in server.js: `registerSocketHandlers(io)`
+     - Listen for socket.on("connection", (socket) => { ... })
+   
+   - **Implement handlers**:
+     
+     - `join_user_room`:
+       - socket.join(`user_${userId}`)
+       - Store socket.data.userId
+     
+     - `join_project`:
+       - socket.join(`project_${projectId}`)
+       - socket.data.projectId = projectId
+       - socket.data.user = user object
+       - Query active users in project
+       - Broadcast: io.to(`project_${projectId}`).emit("active_users", [users])
+     
+     - `join_document`:
+       - socket.join(`document_${projectId}`)
+       - Load document from DB
+       - Emit: socket.emit("document_init", { content })
+     
+     - `document_update`:
+       - Validate projectId
+       - Update cache: documentByProject.set(projectId, content)
+       - Broadcast to room: io.to(`document_${projectId}`).emit("document_update", {...})
+     
+     - `page_delta`:
+       - Emit to room: socket.to(`document_${projectId}`).emit("page_delta", { userId, pageNumber, delta })
+       - Update cached document with fullContent if provided
+     
+     - `chat_message`:
+       - Validate projectId, userId, message
+       - INSERT into chat_messages table
+       - Query sender name
+       - Broadcast: io.to(`project_${projectId}`).emit("new_chat_message", payload)
+     
+     - `direct_message`:
+       - Validate fromUserId, toUserId, message
+       - INSERT into direct_messages table
+       - Broadcast to both user rooms
+     
+     - `cursor_position`:
+       - Emit to room: socket.to(`document_${projectId}`).emit("cursor_position", { userId, pageNumber, range, socketId })
+     
+     - `cursor_clear`:
+       - Emit to room: socket.to(`document_${projectId}`).emit("cursor_clear", { socketId })
+     
+     - `editor_activity`:
+       - Broadcast: io.to(`project_${projectId}`).emit("editor_activity_update", { pageNumber, action, user, at })
+     
+     - `disconnect`:
+       - Clean up active users
+       - Broadcast cursor_clear
+       - Update active_users list
+
+### Key Logic Notes for Phase 4
+- Document content is stored as HTML with PAGE_BREAK markers (`<!--PAGE_BREAK-->`) separating pages
+- Realtime updates use Socket.IO to broadcast changes to all connected clients
+- Cursor positions and deltas are sent per-page to track collaborative editing
+- Active user list is maintained in memory during session (not persisted)
+- Document cache reduces repeated DB reads during active sessions
+- Contribution logging tracks who edited what and when for analytics
+- Sanitization is critical to prevent XSS from malicious HTML in saved documents
+
+---
+
+## Phase 5: Chat & Analytics
+**Objective:** Build chat system (group and direct), analytics tracking, and exports.
+**Duration:** 2-3 days
+**Depends on:** Phase 4
+
+### Files to Read First
+- `backend/server/controllers/chatController.js` (full file)
+- `backend/server/controllers/analyticsController.js` (full file)
+- `backend/server/routes/chat.js` (full file)
+- `backend/server/routes/analytics.js` (full file)
+
+### Files to Recreate
+
+1. **backend/server/controllers/chatController.js** (complete rewrite, ~100 lines)
+   - **Export async functions**:
+     
+     - `getAvailableUsers(req, res)` [requireAuth]:
+       - Query: SELECT id, name, email FROM users WHERE id <> ? ORDER BY name
+       - Return array of users (exclude current user)
+     
+     - `getProjectMessages(req, res)` [requireProjectMember]:
+       - projectId from params
+       - Query: SELECT cm.id, cm.project_id, cm.user_id, cm.message, cm.created_at, u.name FROM chat_messages cm JOIN users u ON u.id = cm.user_id WHERE cm.project_id = ? ORDER BY cm.created_at ASC LIMIT 300
+       - Return array of messages
+     
+     - `getDirectMessages(req, res)` [requireAuth]:
+       - otherUserId from params
+       - Query: SELECT ... FROM direct_messages WHERE (from_user_id=? AND to_user_id=?) OR (from_user_id=? AND to_user_id=?) ORDER BY created_at ASC LIMIT 300
+       - Return array of messages
+
+2. **backend/server/controllers/analyticsController.js** (complete rewrite, ~150 lines)
+   - **Export async functions**:
+     
+     - `getProjectSummary(req, res)` [requireProjectMember]:
+       - projectId from params
+       - Query contribution_logs: aggregate word_count, count by action_type
+       - Query: SELECT COUNT(*) as total_edits, SUM(word_count) as total_words FROM contribution_logs WHERE project_id=?
+       - Query: SELECT user_id, COUNT(*) as edit_count, SUM(word_count) as word_count FROM contribution_logs WHERE project_id=? GROUP BY user_id
+       - Return { totals: {...}, byUser: [...], byPage: [...] }
+     
+     - `getPageAnalytics(req, res)` [requireProjectMember]:
+       - projectId, pageNumber from params
+       - Query contribution_logs WHERE project_id=? AND page_number=?
+       - Aggregate by user: count, word_count, action breakdown
+       - Return { pageNumber, byUser: [...], total: {...} }
+     
+     - `getContributionTimeline(req, res)` [requireProjectMember]:
+       - projectId from params
+       - Query contribution_logs grouped by DATE(timestamp)
+       - Return array of { date, total_edits, total_words }
+     
+     - `exportProjectPDF(req, res)` [requireProjectMember]:
+       - projectId from params
+       - Load full document content
+       - Could use pdfkit to render server-side (or let frontend handle with jsPDF)
+       - For now: return content, let frontend render
+       - Set Content-Disposition: attachment; filename="project_${projectId}.pdf"
+
+3. **backend/server/routes/chat.js** (complete rewrite, ~20 lines)
+   - Create router
+   - Mount:
+     - `GET /users`: getAvailableUsers
+     - `GET /:projectId/messages`: getProjectMessages
+     - `GET /direct/:otherUserId`: getDirectMessages
+
+4. **backend/server/routes/analytics.js** (complete rewrite, ~30 lines)
+   - Create router
+   - Mount:
+     - `GET /:projectId/summary`: getProjectSummary
+     - `GET /:projectId/pages/:pageNumber`: getPageAnalytics
+     - `GET /:projectId/timeline`: getContributionTimeline
+     - `GET /:projectId/export/pdf`: exportProjectPDF
+
+### Key Logic Notes for Phase 5
+- Chat messages are persisted to DB immediately
+- Analytics are computed on-demand from contribution_logs
+- Contribution logs track word count, action type (write, delete, paste, edit)
+- Timeline aggregation groups by date for chart visualization
+- User contributions show both edit count and total words contributed
+- Export endpoint sets proper Content-Disposition headers for file download
+
+---
+
+## Phase 6: Frontend Shell & UI
+**Objective:** Build HTML views, styles, and JavaScript page logic from stable backend APIs.
+**Duration:** 3-4 days
+**Depends on:** Phase 5
+
+### Files to Read First
+- `frontend/public/css/style.css` (full file)
+- `frontend/public/js/common.js` (full file)
+- `frontend/views/editor.html` (full file)
+- `frontend/public/js/editor.js` (full file)
+- `frontend/views/chat.html` (full file)
+- `frontend/public/js/chat.js` (full file)
+
+### Files to Recreate (Order matters!)
+
+1. **frontend/public/css/style.css** (complete rewrite, ~600 lines)
+   - **Structure**:
+     - CSS variables `:root { --blue, --gray-bg, --white, --text, etc. }`
+     - Reset: `* { box-sizing: border-box }`
+     - Global: `body { font-family, color, background }`
+     - Layout system: `.layout { display: grid; grid-template-columns: 230px 1fr }`
+     - Sidebar: `.sidebar { ... }`
+     - Menu items: `.menu-item { ... }, .menu-item.active { ... }`
+     - Cards & Sections: `.card { ... }, .topbar { ... }, .page-body { ... }`
+     - Inputs: `input, button, textarea { ... }`
+     - Editor-specific: `.word-pages { ... }, .word-page { ... }, .word-page-editor { ... }`
+     - Chat: `.chat-shell { ... }, .chat-box { ... }, .chat-message { ... }, .chat-bubble { ... }`
+     - Alerts & Messages: `.alert { ... }, .badge { ... }`
+     - Responsive: `@media (max-width: 768px) { ... }`
+   - **Color scheme**:
+     - Primary blue: #1f5fbf
+     - Backgrounds: light grays, white
+     - Text: dark gray
+     - Success: green, Error: red, Warning: orange
+   - **Typography**:
+     - Font family: Segoe UI, Tahoma, Geneva
+     - Heading sizes: h1 largest, h2 medium, body text 14-15px
+     - Line height: 1.6-1.7 for readability
+
+2. **frontend/public/js/common.js** (complete rewrite, ~150 lines)
+   - **Export API wrapper**:
+     - `API.get(url)`, `API.post(url, body)`, `API.put(url, body)`, `API.delete(url)`
+     - All use fetch with credentials: "include" for session cookies
+     - All call `parseJson(res)` helper
+   - **Export helper functions**:
+     - `parseJson(res)`: Parse response, throw on error
+     - `getQuery(name)`: Get URL search param
+     - `getCurrentUser()`: GET /api/auth/me
+     - `showMessage(targetId, text, type)`: Display alert/toast
+     - `attachLogoutButton()`: Wire logout handler
+   - **Export chat unread helpers** (shared across pages):
+     - `getChatUnreadCount(key)`, `setChatUnreadCount(key, value)`, `incrementChatUnreadCount(key)`
+     - Use localStorage with key `collabwrite_chat_unread_v1`
+   - **Export storage helpers**:
+     - `loadState(key)`: Load from localStorage JSON
+     - `saveState(key, value)`: Save to localStorage JSON
+
+3. **frontend/views/login.html** (complete rewrite, ~80 lines)
+   - **Structure**:
+     - `.auth-container` centered on page
+     - `.auth-card` with form
+     - `h1` title
+     - `input[type="email"]` for email
+     - `input[type="password"]` for password
+     - `button` for submit
+     - Link to register page
+     - `div` for messages
+   - **Script src**:
+     - `/public/js/common.js`
+     - `/public/js/login.js`
+
+4. **frontend/public/js/login.js** (complete rewrite, ~80 lines)
+   - **On page load**:
+     - If user already logged in (currentUser exists), redirect to /dashboard
+     - Else show login form
+   - **Form submission**:
+     - Get email, password values
+     - POST /api/auth/login
+     - On success: save user to sessionStorage, redirect to /dashboard
+     - On error: show error message
+   - **Attach register link**: Link to /register
+
+5. **frontend/views/register.html** (similar to login)
+   - Input fields: name, email, password, confirm password
+   - Script: `/public/js/register.js`
+
+6. **frontend/public/js/register.js** (similar to login)
+   - Validate: name not empty, email valid, passwords match
+   - POST /api/auth/register
+   - On success: show "registered, go to login" message
+   - Link back to login
+
+7. **frontend/views/dashboard.html** (complete rewrite, ~100 lines)
+   - **Sidebar navigation**: Home (active), Projects, Editor, Chat, Profile
+   - **Topbar**: Brand, user info, logout button
+   - **Main content**:
+     - Welcome section
+     - Recent projects list (cards with title, role, created date)
+     - "Create New Project" button
+     - Statistics badges (total projects, total pages, etc.)
+
+8. **frontend/public/js/dashboard.js** (complete rewrite, ~150 lines)
+   - **On page load**:
+     - Call getCurrentUser(), redirect to /login if not authenticated
+     - GET /api/projects to list user's projects
+     - Render projects as cards
+   - **Render logic**:
+     - For each project: title, owner, role, member count, total pages
+     - Add click handler to open project in editor
+   - **Create project**:
+     - Show modal/form to input project title, description
+     - POST /api/projects
+     - On success: refresh project list
+   - **Statistics**:
+     - Count total projects, aggregate pages, sum contributors
+     - Display in badge format
+
+9. **frontend/views/projects.html** (complete rewrite, ~120 lines)
+   - **Sidebar navigation**: Home, Projects (active), Editor, Chat, Profile
+   - **Main content**:
+     - List of projects (table or cards)
+     - Each project row: title, owner, role, members, actions
+     - Action buttons: Open (in editor), Manage (members), Delete (if owner), Export (if owner)
+   - **Modals**:
+     - Invite user modal: select user, choose role, send invite
+     - Manage members: list members, remove (if owner), assign pages (if owner)
+
+10. **frontend/public/js/projects.js** (complete rewrite, ~300 lines)
+    - **On page load**:
+      - GET /api/projects
+      - Render projects list
+      - GET /api/projects/:projectId for selected project details
+    - **Render functions**:
+      - `renderProjectsList(projects)`: Build table/cards from projects
+      - `renderMembers(members, projectId, isOwner)`: Build member rows with actions
+    - **Event handlers**:
+      - Click "Manage members": load members, show modal
+      - Click "Invite": show invite form, POST /api/projects/:id/invite
+      - Click "Remove member": DELETE /api/projects/:id/members/:userId
+      - Click "Delete project": confirm, DELETE /api/projects/:id
+      - Click "Assign pages": show form, POST /api/projects/:id/assign-pages
+    - **CRUD operations**:
+      - All interact with /api/projects/* endpoints
+
+11. **frontend/views/editor.html** (complete rewrite, ~150 lines)
+    - **Sidebar navigation**: Home, Projects, Editor (active), Chat, Profile
+    - **Topbar**:
+      - Project title and role badge
+      - Actions dropdown: Export PDF, Analytics, NLP (later)
+      - Zoom controls: -/+/Reset buttons with % label
+    - **Toolbar**:
+      - Format buttons: H1, H2, Bold, Italic, Underline, Lists, Align, Table, Image, Caption, ToC
+    - **Main editor area**:
+      - `.word-pages` container (scrollable, fixed height)
+      - Each `.word-page` is fixed-size A4 (794x1123px)
+      - `.word-page-editor` inside for Quill editor
+      - Page number footer
+
+12. **frontend/public/js/editor.js** (complete rewrite, ~1200 lines)
+    - **Initialization**:
+      - Get projectId from URL params
+      - Call getCurrentUser(), redirect if not authenticated
+      - Load project details: GET /api/projects/:projectId
+      - Load document: GET /api/editor/:projectId/document
+      - Parse pages from document content (split by PAGE_BREAK)
+      - Create Quill editor for each page
+    - **Quill setup**:
+      - For each page: new Quill(`#wordPageEditor${pageNumber}`, { theme: "snow", modules: { table: true, toolbar: false } })
+      - Bind events:
+        - text-change: emit page_delta via Socket.IO, call scheduleSave()
+        - selection-change: emit cursor_position, highlight local cursor
+    - **Realtime collaboration**:
+      - Socket.io listeners:
+        - on("document_init"): Load initial document
+        - on("document_update"): Update if from different user
+        - on("page_delta"): Apply delta to page, preserve local cursor
+        - on("cursor_position"): Render remote user cursor
+        - on("cursor_clear"): Remove cursor marker
+      - Emitters:
+        - emit("page_delta", { projectId, userId, pageNumber, delta })
+        - emit("cursor_position", { projectId, pageNumber, range })
+        - emit("join_document", { projectId })
+    - **Save logic**:
+      - Debounce save to every 5 seconds
+      - On save: serialize all pages, POST /api/editor/:projectId/document
+      - On page delta: also save (auto-sync)
+    - **Zoom**:
+      - Store zoom level in localStorage
+      - Apply via CSS `zoom` property on word-pages container
+      - Buttons: -10%, +10%, reset to 100%
+    - **Image handling**:
+      - Click image: select it, show resize handles
+      - Drag handles: resize image, preserve aspect ratio
+      - Right-click: context menu to delete or resize
+      - Drag image to another page: remove from current, insert into target page
+    - **Formatting toolbar**:
+      - Bind format buttons to Quill format() calls
+      - H1/H2: formatLine with header attribute
+      - Bold/Italic/Underline: format with attribute
+      - Lists: format with list attribute
+      - Alignment: format with align attribute
+      - Table insert: insert table HTML
+      - Image insert: file input, upload, get URL, insert
+      - Caption: insert figure caption
+      - ToC: generate table of contents from h1/h2 in document
+    - **Page pagination**:
+      - Measure overflow with hidden Quill instance
+      - If page exceeds height, split at word boundary
+      - Move overflow to next page (auto-create)
+      - Preserve formatting across page break
+    - **Analytics**:
+      - Track: word count per page, edits per user, contribution type
+      - POST /api/editor/contribution-log after each semantic edit
+      - Log: action_type (write, delete, paste, edit), word_count, time_spent
+
+13. **frontend/views/chat.html** (complete rewrite, ~100 lines)
+    - **Sidebar navigation**: Home, Projects, Editor, Chat (active), Profile
+    - **Main layout**: `.chat-shell`
+      - Left sidebar: `.chat-sidebar`
+        - Project carousel: scroll through projects
+        - Thread list: all conversations (group + direct)
+      - Right main: `.chat-main`
+        - Header: thread title and member list
+        - Chat box: scrollable message list
+        - Input area: text input + send button
+
+14. **frontend/public/js/chat.js** (complete rewrite, ~250 lines)
+    - **On page load**:
+      - Call getCurrentUser(), redirect if not authenticated
+      - GET /api/projects (list user's projects)
+      - GET /api/chat/users (list available users for DM)
+      - Render conversation UI: carousel + list
+    - **Render functions**:
+      - `renderConversationUI()`: Build carousel and list from projects + users
+      - Add unread badge count from shared state (getChatUnreadCount())
+      - `appendMessage(msg, isMine)`: Add message to chat box
+    - **Socket.IO setup**:
+      - Connect: `socket = io()`
+      - Emit: `join_user_room({ userId })`
+      - Listen:
+        - `new_chat_message`: If in active thread, append; else increment unread
+        - `new_direct_message`: Same logic
+        - `active_users`: Update member list display
+    - **Send message**:
+      - Get message text from input
+      - Emit: `chat_message` (for group) or `direct_message` (for DM)
+      - Clear input, call appendChild for local echo
+    - **Thread switching**:
+      - Click project chip: load group messages, emit join_project
+      - Click user chip: load direct messages, set current thread
+      - Update active state, clear unread count
+    - **Unread tracking**:
+      - Use shared setChatUnreadCount/incrementChatUnreadCount
+      - Update sidebar badge via updateChatNavBadge()
+
+15. **frontend/views/profile.html** (complete rewrite, ~100 lines)
+    - **Sidebar navigation**: Home, Projects, Editor, Chat, Profile (active)
+    - **Main content**:
+      - User info: name, email, created date
+      - Verification status: Email verified yes/no
+      - Security: MFA enabled yes/no, enable/disable toggle
+      - Account actions: Change password, Delete account
+
+16. **frontend/public/js/profile.js** (complete rewrite, ~120 lines)
+    - **On page load**:
+      - GET /api/auth/me
+      - Display user info, verification, MFA status
+    - **Handlers**:
+      - "Enable MFA": POST /api/auth/mfa/enable (future implementation)
+      - "Change password": POST /api/auth/password (future)
+      - "Delete account": confirm, POST /api/auth/delete (future)
+    - **Display logic**:
+      - Show badges for verified/not verified, MFA enabled/disabled
+      - Color badges: green for verified/enabled, gray for not
+
+17. **frontend/views/analytics.html** (complete rewrite, ~120 lines)
+    - **Sidebar navigation**: Home, Projects, Editor, Chat, Profile
+    - **Main content**:
+      - Project title and role
+      - Statistics cards: total edits, total words, contributor count
+      - Charts area: contribution timeline (line chart), by user (bar chart), by page (bar chart)
+      - Export button: Download analytics PDF
+    - **Chart library**: Use Chart.js or similar
+
+18. **frontend/public/js/analytics.js** (complete rewrite, ~200 lines)
+    - **On page load**:
+      - Get projectId from URL
+      - GET /api/analytics/:projectId/summary
+      - GET /api/analytics/:projectId/timeline
+      - Display statistics
+    - **Chart rendering**:
+      - Timeline chart: date on X-axis, edits/words on Y-axis
+      - By user: bar chart, sorted by contribution
+      - By page: bar chart, sorted by edits
+    - **Export**:
+      - "Download PDF" button: render visible charts, capture with html2canvas, build PDF with jsPDF
+      - Set filename: analytics_project_${projectId}.pdf
+
+### Key Logic Notes for Phase 6
+- All API calls go through the API helper from common.js
+- Socket.IO listeners are set up on page load or in realtime setup
+- Unread chat state persists in localStorage and syncs across tabs/windows
+- Zoom is stored in localStorage and restored on page load
+- Realtime deltas must transform local cursor position to prevent jumping
+- Page overflow triggers auto-creation of next page
+- All user input is HTML-escaped before display to prevent XSS
+- File uploads are validated on both client and server
+- Session is stored in cookies, checked via getCurrentUser() on each page load
+- Navigation is SPA-style: change URL, load new page script, don't full-page reload
+
+---
+
+## Cross-Phase Testing Checklist
+
+### Phase 1 Tests
+- [ ] Database connection successful
+- [ ] Schema created without errors
+- [ ] Tables exist with all columns and indexes
+- [ ] Foreign keys are enforced
+
+### Phase 2 Tests
+- [ ] Register new user: success
+- [ ] Login with correct credentials: success
+- [ ] Login with wrong password: 401 error
+- [ ] Logout: session destroyed, /api/auth/me returns 401
+- [ ] getCurrentUser after login: returns user object
+
+### Phase 3 Tests
+- [ ] Create project as owner: success
+- [ ] List projects: shows only user's projects
+- [ ] Invite user to project: creates invitation
+- [ ] Accept invitation: user becomes member
+- [ ] Remove member: user deleted from project_members
+- [ ] Delete project: cascades to pages, documents, members
+
+### Phase 4 Tests
+- [ ] Load document: GET returns content
+- [ ] Save document: POST updates DB
+- [ ] Realtime delta: emitted delta shows on other client
+- [ ] Cursor position: remote cursor appears and disappears
+- [ ] Page pagination: overflow content moves to new page
+- [ ] Image drag: image moves within page
+- [ ] Image cross-page: image moves to different page
+
+### Phase 5 Tests
+- [ ] Send group message: appears in chat and other clients
+- [ ] Send direct message: appears in DM thread
+- [ ] Contribution logging: POST creates log entry
+- [ ] Analytics summary: aggregates contribution data
+- [ ] Export PDF: downloads file
+
+### Phase 6 Tests
+- [ ] Login page: form submits, user logged in
+- [ ] Dashboard: lists user's projects
+- [ ] Projects page: shows members, invite works
+- [ ] Editor page: Quill renders, typing works, saves
+- [ ] Chat page: message sending, member list
+- [ ] Profile page: displays user info
+- [ ] Analytics page: charts render, export works
+- [ ] Zoom: pages scale in/out, persists
+- [ ] Unread badge: shows on sidebar, updates in realtime
+- [ ] Permissions: Viewer can't edit, Editor can edit pages, Owner has full control
