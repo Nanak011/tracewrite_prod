@@ -1,11 +1,11 @@
 All members:
 clone the repository git clone 
-edit the env file 
+edit the env file- add .env file to backend 
 cd frontend || npm install
 cd backend || npm install
 
 For backend:
 
-
-npm install nodemailer bcryptjs sanitize-html pdfkit express-session  
+cd backend
+npm install nodemailer bcryptjs sanitize-html pdfkit express-session dotenv
 
