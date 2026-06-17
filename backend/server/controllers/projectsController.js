@@ -33,6 +33,15 @@ async function createProject(req, res) {
             return res.status(400).json({error: "Title and description are required"});
         }
 
+        const existingProject = await query(
+            "SELECT id FROM projects WHERE title = ? AND owner_id = ?",
+            [title, req.session.user.id]
+        );
+
+        if (existingProject.length > 0) {
+            return res.status(409).json({ error: "You already have a project with this title" });
+        }
+        
         const result = await query(
             "INSERT INTO projects (title, description, owner_id, total_pages) VALUES (?, ?, ?, ?)",
             [title, description || "", req.session.user.id, totalPages]
