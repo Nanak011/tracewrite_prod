@@ -19,6 +19,24 @@ const API = {
     });
     return parseJson(res);
   },
+
+  async put(url, body) {
+    const res = await fetch(`${API_BASE_URL}${url}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body || {}),
+    });
+    return parseJson(res);
+  },
+  async delete(url) {
+    const res = await fetch(`${API_BASE_URL}${url}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    return parseJson(res);
+  },
+
 };
 
 async function parseJson(res) {
