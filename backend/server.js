@@ -14,6 +14,7 @@ const authRoutes = require("./server/routes/auth");
 const projectRoutes = require("./server/routes/projects");
 const editorRoutes = require("./server/routes/editor");
 const chatRoutes = require("./server/routes/chat");
+const analyticsRoutes = require("./server/routes/analytics");
 const { registerSocketHandlers } = require("./server/sockets");
 
 
@@ -60,6 +61,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/editor", editorRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/analytics", analyticsRoutes);
+
 // HTML page routes
 
 function sendView(file) {
@@ -78,6 +81,7 @@ app.get("/dashboard", sendView("dashboard.html"));
 app.get("/projects", sendView("projects.html"));
 app.get("/editor", sendView("editor.html"));
 app.get("/chat", sendView("chat.html"));
+app.get("/analytics", sendView("analytics.html"));
 app.get("/profile", sendView("profile.html"));
 
 registerSocketHandlers(io);
