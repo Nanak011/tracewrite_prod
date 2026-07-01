@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CollabWrite - Analytics</title>
+    <link rel="stylesheet" href="/public/css/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">CollabWrite</div>
+        <a class="menu-item" href="/dashboard">Home</a>
+        <a class="menu-item" href="/projects">Projects</a>
+        <a class="menu-item" href="/editor">Editor</a>
+        <a class="menu-item" href="/chat">Chat</a>
+        <a class="menu-item" href="/profile">Profile</a>
+      </aside>
+
+      <div class="content-wrap">
+        <header class="topbar">
+          <strong>Contribution Analytics</strong>
+          <div class="row-wrap">
+            <input id="projectIdInput" type="number" placeholder="Project ID" style="width:120px;" />
+            <button id="loadAnalyticsBtn" style="width:auto;">Load</button>
+            <button id="toggleHistoryBtn" style="width:auto;">Show Full History</button>
+            <button id="downloadPdfBtn" style="width:auto;">Download PDF</button>
+          </div>
+        </header>
+
+        <main class="page-body" id="analyticsCapture">
+          <section class="grid grid-3" id="summaryCards"></section>
+
+          <section class="card" style="margin-top:14px;">
+            <h3>Current Document Contribution Share (Net)</h3>
+            <canvas id="contributionPie" width="420" height="220"></canvas>
+            <div id="pieLegend" class="row-wrap" style="margin-top:10px;"></div>
+          </section>
+
+          <section class="card" style="margin-top:14px;">
+            <h3>Current Document State Breakdown</h3>
+            <table class="table" id="summaryTable">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Current Net Words</th>
+                  <th>Current Share %</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </section>
+
+          <section class="card" id="historySection" style="margin-top:14px; display:none;">
+            <h3>Full History (Start to Finish)</h3>
+
+            <h3 style="margin-top:14px;">History Event Log</h3>
+            <table class="table" id="historyLogTable">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Page</th>
+                  <th>Words</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="/public/js/common.js"></script>
+    <script src="/public/js/analytics.js"></script>
+  </body>
+</html>
