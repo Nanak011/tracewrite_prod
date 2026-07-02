@@ -29,12 +29,22 @@ const FRONTEND_ROOT = path.resolve(__dirname, "..", "frontend");
 const app = express();
 
 const server = http.createServer(app);
+// const io = new Server(server, {
+//   cors: {
+//     origin: true,
+//     credentials: true,
+//   },
+// });
+
 const io = new Server(server, {
   cors: {
-    origin: true,
+    origin: process.env.NODE_ENV === 'production'
+      ? ['http://tracewrite.fasttype.vip', 'https://tracewrite.fasttype.vip']
+      : true,
     credentials: true,
   },
 });
+
 
 // session configuration
 const sessionMiddleware = session({
@@ -48,7 +58,17 @@ const sessionMiddleware = session({
 
 
 // middleware
-app.use(cors({ origin: true, credentials: true }));
+// app.use(cors({ origin: true, credentials: true }));\
+// CORS configuration
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+  ? ['http://yourdomain.com', 'https://yourdomain.com'] // Replace with your actual domain
+  : true; // Allow all in development
+
+app.use(cors({ 
+  origin: allowedOrigins, 
+  credentials: true 
+}));
+
 app.use(express.json( {limit: "10mb"  }));
 app.use(express.urlencoded({ extended: true }));
 app.use(sessionMiddleware);
