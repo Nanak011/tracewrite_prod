@@ -61,7 +61,7 @@ const sessionMiddleware = session({
 // app.use(cors({ origin: true, credentials: true }));\
 // CORS configuration
 const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? ['http://yourdomain.com', 'https://yourdomain.com'] // Replace with your actual domain
+  ? ['http://tracewrite.fasttype.vip', 'https://tracewrite.fasttype.vip'] // Replace with your actual domain
   : true; // Allow all in development
 
 app.use(cors({ 
