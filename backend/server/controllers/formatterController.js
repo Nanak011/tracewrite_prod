@@ -165,8 +165,16 @@ async function formatLive(req, res) {
     console.log('Script:', pythonScript);
     console.log('Args:', ['--input', inputFile, '--output', outputFile, '--config', configFile]);
 
-    // Run Python formatter asynchronously with unbuffered output
-    const python = spawn("python", [
+    // // Run Python formatter asynchronously with unbuffered output
+    // const python = spawn("python", [
+    // Use python3 for production (Linux), fallback to python for Windows dev
+
+    const venvPython = path.join(__dirname, "..", "..", "..", "nlp", "venv", "bin", "python3");
+    const pythonCmd = require('fs').existsSync(venvPython) 
+      ? venvPython 
+      : (process.platform === 'win32' ? 'python' : 'python3');
+
+    const python = spawn(pythonCmd, [
       "-u",  // Unbuffered output
       pythonScript,
       "--input", inputFile,
