@@ -59,9 +59,19 @@
       background: #343a40;
       color: white;
     }
+    .status-panel .form-check {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-direction: row-reverse;
+      gap: 10px;          
+      margin-bottom: 8px;
+      text-align: left;
+    }
     .status-panel .form-check-input {
       background-color: rgba(255,255,255,0.1);
       border-color: rgba(255,255,255,0.3);
+      margin-top:0 !important;
     }
     .status-panel .form-check-input:checked {
       background-color: #28a745;
@@ -95,8 +105,9 @@
     .action-buttons {
       position: fixed;
       bottom: 20px;
-      right: 370px;
+      right: 362px;
       z-index: 1000;
+      width: 170px;
     }
     .progress-bar {
       height: 4px;
@@ -261,16 +272,16 @@
   </div>
 
   <div class="action-buttons">
-    <button class="btn btn-outline-light btn-sm" id="resetDefaultsBtn">
+    <button class="btn btn-outline-light btn-sm" id="resetDefaultsBtn" >
       🔄 Reset to Defaults
     </button>
-    <button class="btn btn-primary btn-lg" id="startFormatBtn">
+    <button class="btn btn-primary btn-lg" id="startFormatBtn" style="margin-top: 10px;">
       ✨ Start Formatting
     </button>
-    <button class="btn btn-success btn-lg" id="downloadBtn" style="display:none;">
+    <button class="btn btn-success btn-lg" id="downloadBtn" style="display:none; margin-top: 10px;" >
       📥 Download DOCX
     </button>
-    <button class="btn btn-secondary" id="backBtn">
+    <button class="btn btn-secondary" id="backBtn" style="margin-top: 10px;">
       ← Back to Editor
     </button>
   </div>
