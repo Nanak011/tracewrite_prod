@@ -11,6 +11,32 @@ function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function validatePassword(password) {
+  const minLength = 8;
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+
+  if (password.length < minLength) {
+    return { valid: false, message: "Password must be at least 8 characters long" };
+  }
+  if (!hasUppercase) {
+    return { valid: false, message: "Password must contain at least one uppercase letter" };
+  }
+  if (!hasLowercase) {
+    return { valid: false, message: "Password must contain at least one lowercase letter" };
+  }
+  if (!hasNumber) {
+    return { valid: false, message: "Password must contain at least one number" };
+  }
+  if (!hasSymbol) {
+    return { valid: false, message: "Password must contain at least one symbol (!@#$%^&*...)" };
+  }
+
+  return { valid: true };
+}
+
 function createOtpCode() {
   return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
 }
@@ -103,8 +129,9 @@ async function register(req, res) {
       return res.status(400).json({ error: "name, email, and password are required" });
     }
 
-    if (String(password).length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ error: passwordValidation.message });
     }
 
     const existing = await query(
@@ -363,8 +390,13 @@ async function resetPassword(req, res) {
     }
 
     const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword || String(newPassword).length < 6) {
-      return res.status(400).json({ error: "currentPassword and newPassword (min 6 chars) are required" });
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "currentPassword and newPassword are required" });
+    }
+
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ error: passwordValidation.message });
     }
 
     const rows = await query("SELECT password FROM users WHERE id = ?", [req.session.user.id]);
@@ -438,6 +470,71 @@ async function updateMfa(req, res) {
   }
 }
 
+async function forgotPassword(req, res) {
+  try {
+    const cleanEmail = normalizeEmail(req.body.email);
+    if (!cleanEmail) {
+      return res.status(400).json({ error: "email is required" });
+    }
+
+    const users = await query(
+      "SELECT id, name, email, email_verified FROM users WHERE email = ?",
+      [cleanEmail]
+    );
+
+    // Always return success to prevent email enumeration
+    if (!users.length) {
+      return res.json({ message: "If your email exists, a password reset code has been sent." });
+    }
+
+    const user = users[0];
+    if (Number(user.email_verified) !== 1) {
+      return res.json({ message: "If your email exists, a password reset code has been sent." });
+    }
+
+    await issueOtp({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      purpose: "password_reset",
+    });
+
+    return res.json({ message: "If your email exists, a password reset code has been sent." });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+async function verifyResetOtp(req, res) {
+  try {
+    const cleanEmail = normalizeEmail(req.body.email);
+    const otp = String(req.body.otp || "").trim();
+    const newPassword = String(req.body.newPassword || "").trim();
+
+    if (!cleanEmail || !otp || !newPassword) {
+      return res.status(400).json({ error: "email, otp, and newPassword are required" });
+    }
+
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ error: passwordValidation.message });
+    }
+
+    const otpRow = await loadActiveOtpByEmail({ email: cleanEmail, purpose: "password_reset" });
+    const verdict = await validateOtpAttempt({ otpRow, otp });
+    if (!verdict.ok) {
+      return res.status(400).json({ error: verdict.reason });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await query("UPDATE users SET password = ? WHERE id = ?", [hashed, otpRow.user_id]);
+
+    return res.json({ message: "Password reset successfully. You can now login with your new password." });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
   register,
   verifyEmailOtp,
@@ -448,4 +545,6 @@ module.exports = {
   me,
   resetPassword,
   updateMfa,
+  forgotPassword,
+  verifyResetOtp,
 };

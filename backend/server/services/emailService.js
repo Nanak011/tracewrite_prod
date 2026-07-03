@@ -21,10 +21,18 @@ function getTransporter() {
 async function sendOtpEmail({ to, name, otp, purpose }) {
   const transporter = getTransporter();
   const from = process.env.MAIL_FROM || "TraceWrite <no-reply@tracewrite.local>";
-  const subject = purpose === "mfa_login" ? "Your TraceWrite MFA Code" : "Verify your TraceWrite email";
-  const intro = purpose === "mfa_login"
-    ? "Use this code to complete your login."
-    : "Use this code to verify your email and activate your account.";
+  
+  let subject, intro;
+  if (purpose === "mfa_login") {
+    subject = "Your TraceWrite MFA Code";
+    intro = "Use this code to complete your login.";
+  } else if (purpose === "password_reset") {
+    subject = "Reset Your TraceWrite Password";
+    intro = "Use this code to reset your password.";
+  } else {
+    subject = "Verify your TraceWrite email";
+    intro = "Use this code to verify your email and activate your account.";
+  }
 
   const text = `${intro}\n\nCode: ${otp}\n\nThis code expires in 10 minutes.`;
 

@@ -13,5 +13,7 @@ router.post("/logout", authController.logout);
 router.get("/me", authController.me);
 router.post("/reset-password", requireAuth, authController.resetPassword);
 router.post("/mfa", requireAuth, authController.updateMfa);
+router.post("/forgot-password", authController.forgotPassword);
+router.post("/verify-reset-otp", authController.verifyResetOtp);
 
 module.exports = router;

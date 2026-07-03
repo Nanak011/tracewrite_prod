@@ -20,7 +20,10 @@
           <input type="email" id="email" required />
 
           <label>Password</label>
-          <input type="password" id="password" required />
+          <input type="password" id="password" minlength="8" required />
+          <p class="muted" style="font-size: 0.85em; margin-top: 4px;">
+            Must be 8+ characters with uppercase, lowercase, number, and symbol
+          </p>
 
           <button type="submit">Register</button>
         </form>
