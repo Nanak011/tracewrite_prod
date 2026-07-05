@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Document Formatter - TraceWrite</title>
-  <link rel="stylesheet" href="/vendor/bootstrap/dist/css/bootstrap.min.css">
+  <!-- <link rel="stylesheet" href="/vendor/bootstrap/dist/css/bootstrap.min.css"> -->
   <link rel="stylesheet" href="/public/css/style.css">
   <script src="/vendor/socket.io/client-dist/socket.io.js"></script>
   <style>
@@ -64,7 +64,7 @@
       align-items: center;
       justify-content: space-between;
       flex-direction: row-reverse;
-      gap: 10px;          
+      gap: 10px;
       margin-bottom: 8px;
       text-align: left;
     }
@@ -97,6 +97,14 @@
     }
     .status-item.error {
       background: #dc3545;
+    }
+    #warningsPanel {
+      display: none;
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid rgba(255,193,7,0.5);
+      border-radius: 4px;
+      background: rgba(255,193,7,0.08);
     }
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -131,6 +139,7 @@
       <div class="progress" style="height: 4px;">
         <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%"></div>
       </div>
+      <div id="warningsPanel"></div>
       <div class="preview-content" id="previewContent">
         <p class="text-muted text-center">Initializing formatter...</p>
       </div>
@@ -138,7 +147,15 @@
 
     <div class="status-panel">
       <h5>Formatting Options</h5>
-      
+
+      <div class="mb-2">
+        <small class="text-muted">
+          Heading convention: number your headings like <code>1.</code>,
+          <code>1.1</code>, <code>1.1.1</code>. Ordered lists should use
+          <code>1)</code> instead - plain "N." is reserved for headings.
+        </small>
+      </div>
+
       <!-- Font Settings -->
       <div class="mb-3">
         <h6 class="text-muted">Font Settings</h6>
@@ -250,16 +267,10 @@
           <label class="form-check-label" for="optTOC" style="font-size: 12px;">Table of Contents</label>
         </div>
         <div class="form-check form-check-sm">
-          <input class="form-check-input" type="checkbox" id="optLOF" checked>
-          <label class="form-check-label" for="optLOF" style="font-size: 12px;">List of Figures</label>
-        </div>
-        <div class="form-check form-check-sm">
-          <input class="form-check-input" type="checkbox" id="optLOT" checked>
-          <label class="form-check-label" for="optLOT" style="font-size: 12px;">List of Tables</label>
-        </div>
-        <div class="form-check form-check-sm">
-          <input class="form-check-input" type="checkbox" id="optNLP" checked>
-          <label class="form-check-label" for="optNLP" style="font-size: 12px;">NLP Heading Detection</label>
+          <input class="form-check-input" type="checkbox" id="optNlpFallback" checked>
+          <label class="form-check-label" for="optNlpFallback" style="font-size: 12px;">
+            Detect unnumbered headings (NLP fallback)
+          </label>
         </div>
       </div>
 
@@ -272,13 +283,13 @@
   </div>
 
   <div class="action-buttons">
-    <button class="btn btn-outline-light btn-sm" id="resetDefaultsBtn" >
+    <button class="btn btn-outline-light btn-sm" id="resetDefaultsBtn">
       🔄 Reset to Defaults
     </button>
     <button class="btn btn-primary btn-lg" id="startFormatBtn" style="margin-top: 10px;">
       ✨ Start Formatting
     </button>
-    <button class="btn btn-success btn-lg" id="downloadBtn" style="display:none; margin-top: 10px;" >
+    <button class="btn btn-success btn-lg" id="downloadBtn" style="display:none; margin-top: 10px;">
       📥 Download DOCX
     </button>
     <button class="btn btn-secondary" id="backBtn" style="margin-top: 10px;">

@@ -3,6 +3,39 @@ let currentProjectId = null;
 let formattedDocId = null;
 let socket = null;
 
+// Null-safe DOM readers. If an element is missing (e.g. the deployed
+// formatter.html is out of sync with this script - which is exactly what
+// happens when only one of the two files gets redeployed), these fall
+// back to a sane default instead of throwing and aborting the whole
+// formatting run.
+function getChecked(id, fallback = true) {
+  const el = document.getElementById(id);
+  if (!el) {
+    console.warn(`formatter.js: expected checkbox #${id} not found in HTML, using default (${fallback})`);
+    return fallback;
+  }
+  return el.checked;
+}
+
+function getValue(id, fallback = '') {
+  const el = document.getElementById(id);
+  if (!el) {
+    console.warn(`formatter.js: expected field #${id} not found in HTML, using default (${fallback})`);
+    return fallback;
+  }
+  return el.value;
+}
+
+function setChecked(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.checked = value;
+}
+
+function setValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+
 async function init() {
   const user = await getCurrentUser();
   if (!user) {
@@ -19,26 +52,21 @@ async function init() {
     return;
   }
 
-  // Load project title
   try {
     const response = await API.get(`/api/editor/${currentProjectId}/document`);
-    document.getElementById('projectTitle').textContent = 
+    document.getElementById('projectTitle').textContent =
       `Formatting: ${response.document.title || 'Untitled'}`;
   } catch (err) {
     console.error('Failed to load project', err);
   }
 
-  // Setup socket for live updates
   socket = io();
-  
-  // Join user room for receiving updates
   socket.emit('join_user_room', { userId: user.id });
-  
+
   socket.on('format_progress', handleFormatProgress);
   socket.on('format_complete', handleFormatComplete);
   socket.on('format_error', handleFormatError);
 
-  // Button handlers
   document.getElementById('startFormatBtn').addEventListener('click', startFormatting);
   document.getElementById('downloadBtn').addEventListener('click', downloadDocument);
   document.getElementById('backBtn').addEventListener('click', () => {
@@ -48,33 +76,27 @@ async function init() {
 }
 
 function resetToDefaults() {
-  // Font settings
-  document.getElementById('fontName').value = 'Times New Roman';
-  document.getElementById('bodyFontSize').value = '12';
-  document.getElementById('headingFontName').value = '';
-  
-  // Heading sizes
-  document.getElementById('heading1Size').value = '16';
-  document.getElementById('heading2Size').value = '14';
-  document.getElementById('heading3Size').value = '13';
-  
-  // Heading colors
-  document.getElementById('heading1Color').value = '';
-  document.getElementById('heading2Color').value = '';
-  
-  // Spacing
-  document.getElementById('lineSpacing').value = '1.5';
-  document.getElementById('paragraphSpacing').value = '6';
-  
-  // Alignment
-  document.getElementById('bodyAlignment').value = 'justify';
-  
-  // Document features
-  document.getElementById('optTOC').checked = true;
-  document.getElementById('optLOF').checked = true;
-  document.getElementById('optLOT').checked = true;
-  document.getElementById('optNLP').checked = true;
-  
+  setValue('fontName', 'Times New Roman');
+  setValue('bodyFontSize', '12');
+  setValue('headingFontName', '');
+
+  setValue('heading1Size', '16');
+  setValue('heading2Size', '14');
+  setValue('heading3Size', '13');
+
+  setValue('heading1Color', '');
+  setValue('heading2Color', '');
+
+  setValue('lineSpacing', '1.5');
+  setValue('paragraphSpacing', '6');
+
+  setValue('bodyAlignment', 'justify');
+  setChecked('optFirstLineIndent', true);
+
+  setChecked('optTOC', true);
+  setChecked('optNlpFallback', true);
+
+  clearWarnings();
   addStatusLog('Settings reset to defaults', 'complete');
 }
 
@@ -84,10 +106,35 @@ function addStatusLog(message, type = 'info') {
   item.className = `status-item ${type}`;
   item.innerHTML = `
     <small class="text-muted">${new Date().toLocaleTimeString()}</small><br>
-    ${message}
+    ${escapeHtml(message)}
   `;
   log.appendChild(item);
   log.scrollTop = log.scrollHeight;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function clearWarnings() {
+  const panel = document.getElementById('warningsPanel');
+  panel.innerHTML = '';
+  panel.style.display = 'none';
+}
+
+function showWarnings(warnings) {
+  const panel = document.getElementById('warningsPanel');
+  if (!warnings || warnings.length === 0) {
+    clearWarnings();
+    return;
+  }
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <h6 class="text-warning">⚠️ Needs your confirmation (${warnings.length})</h6>
+    ${warnings.map(w => `<div class="status-item" style="background: rgba(255,193,7,0.2);">${escapeHtml(w)}</div>`).join('')}
+  `;
 }
 
 function updateProgress(percent) {
@@ -98,39 +145,38 @@ async function startFormatting() {
   const startBtn = document.getElementById('startFormatBtn');
   startBtn.disabled = true;
   startBtn.textContent = 'Formatting...';
+  clearWarnings();
 
   addStatusLog('Starting formatting process...', 'active');
   updateProgress(10);
 
   try {
-    // Collect styling options
     const options = {
       // Document features
-      include_toc: document.getElementById('optTOC').checked,
-      include_lof: document.getElementById('optLOF').checked,
-      include_lot: document.getElementById('optLOT').checked,
-      enable_nlp_backup: document.getElementById('optNLP').checked,
-      
+      include_toc: getChecked('optTOC', true),
+      enable_nlp_fallback: getChecked('optNlpFallback', true),
+
       // Font settings
-      font_name: document.getElementById('fontName').value,
-      body_font_size_pt: parseInt(document.getElementById('bodyFontSize').value),
-      heading_font_name: document.getElementById('headingFontName').value || null,
-      
+      font_name: getValue('fontName', 'Times New Roman'),
+      body_font_size_pt: parseInt(getValue('bodyFontSize', '12')),
+      heading_font_name: getValue('headingFontName', '') || null,
+
       // Heading sizes
-      heading_1_size_pt: parseInt(document.getElementById('heading1Size').value),
-      heading_2_size_pt: parseInt(document.getElementById('heading2Size').value),
-      heading_3_size_pt: parseInt(document.getElementById('heading3Size').value),
-      
+      heading_1_size_pt: parseInt(getValue('heading1Size', '16')),
+      heading_2_size_pt: parseInt(getValue('heading2Size', '14')),
+      heading_3_size_pt: parseInt(getValue('heading3Size', '13')),
+
       // Heading colors
-      heading_1_color: document.getElementById('heading1Color').value || null,
-      heading_2_color: document.getElementById('heading2Color').value || null,
-      
+      heading_1_color: getValue('heading1Color', '') || null,
+      heading_2_color: getValue('heading2Color', '') || null,
+
       // Spacing
-      line_spacing: parseFloat(document.getElementById('lineSpacing').value),
-      paragraph_space_after_pt: parseInt(document.getElementById('paragraphSpacing').value),
-      
+      line_spacing: parseFloat(getValue('lineSpacing', '1.5')),
+      paragraph_space_after_pt: parseInt(getValue('paragraphSpacing', '6')),
+
       // Alignment
-      body_alignment: document.getElementById('bodyAlignment').value,
+      body_alignment: getValue('bodyAlignment', 'justify'),
+      enable_first_line_indent: getChecked('optFirstLineIndent', true),
     };
 
     addStatusLog('Sending document to formatter...', 'active');
@@ -142,7 +188,6 @@ async function startFormatting() {
 
     if (response.success) {
       addStatusLog('Formatting initiated', 'complete');
-      // Live updates will come via socket
     } else {
       throw new Error(response.error || 'Formatting failed');
     }
@@ -156,31 +201,30 @@ async function startFormatting() {
 }
 
 function handleFormatProgress(data) {
-  const { stage, message, progress, preview } = data;
-  
+  const { message, progress, preview } = data;
+
   addStatusLog(message, 'active');
   updateProgress(progress || 50);
 
   if (preview) {
-    // Update preview with formatted HTML
     document.getElementById('previewContent').innerHTML = preview;
   }
 }
 
 function handleFormatComplete(data) {
-  const { documentId, preview, message } = data;
-  
+  const { documentId, preview, message, warnings } = data;
+
   addStatusLog(message || 'Formatting complete!', 'complete');
   updateProgress(100);
 
   formattedDocId = documentId;
 
-  // Show final preview
   if (preview) {
     document.getElementById('previewContent').innerHTML = preview;
   }
 
-  // Show download button
+  showWarnings(warnings);
+
   document.getElementById('startFormatBtn').style.display = 'none';
   document.getElementById('downloadBtn').style.display = 'inline-block';
 }
@@ -191,7 +235,7 @@ function handleFormatError(data) {
   if (details) {
     addStatusLog(details, 'error');
   }
-  
+
   const startBtn = document.getElementById('startFormatBtn');
   startBtn.disabled = false;
   startBtn.textContent = '✨ Retry Formatting';
@@ -206,9 +250,7 @@ async function downloadDocument() {
 
   try {
     addStatusLog('Preparing download...', 'active');
-    
     window.location.href = `/api/formatter/${currentProjectId}/download/${formattedDocId}`;
-    
     addStatusLog('Download started', 'complete');
   } catch (error) {
     console.error('Download error:', error);
