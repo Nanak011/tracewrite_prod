@@ -1,6 +1,7 @@
-CREATE DATABASE IF NNOT EXISTS tracewrite;
+CREATE DATABASE IF NOT EXISTS tracewrite;
 USE tracewrite;
 
+-- Users table: stores user account information
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
@@ -11,11 +12,12 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- OTP codes table: stores time-limited verification codes
 CREATE TABLE IF NOT EXISTS otp_codes (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   email VARCHAR(190) NOT NULL,
-  purpose ENUM('email_verify', 'mfa_login','password_reset') NOT NULL,
+  purpose ENUM('email_verify', 'mfa_login', 'password_reset') NOT NULL,
   challenge_token VARCHAR(120) NULL,
   otp_hash VARCHAR(255) NOT NULL,
   attempts INT NOT NULL DEFAULT 0,
@@ -27,16 +29,17 @@ CREATE TABLE IF NOT EXISTS otp_codes (
   CONSTRAINT fk_otp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Projects table: stores project metadata
 CREATE TABLE IF NOT EXISTS projects (
   id INT AUTO_INCREMENT PRIMARY KEY,
   title VARCHAR(200) NOT NULL,
   description TEXT,
   owner_id INT NOT NULL,
-  total_pages INT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_projects_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Project members table: user-project relationships with roles
 CREATE TABLE IF NOT EXISTS project_members (
   id INT AUTO_INCREMENT PRIMARY KEY,
   project_id INT NOT NULL,
@@ -48,18 +51,7 @@ CREATE TABLE IF NOT EXISTS project_members (
   CONSTRAINT fk_pm_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS pages (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  project_id INT NOT NULL,
-  page_number INT NOT NULL,
-  content MEDIUMTEXT,
-  last_edited_by INT NULL,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_project_page (project_id, page_number),
-  CONSTRAINT fk_pages_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  CONSTRAINT fk_pages_editor FOREIGN KEY (last_edited_by) REFERENCES users(id) ON DELETE SET NULL
-);
-
+-- Project documents table: stores unified document content 
 CREATE TABLE IF NOT EXISTS project_documents (
   id INT AUTO_INCREMENT PRIMARY KEY,
   project_id INT NOT NULL UNIQUE,
@@ -70,7 +62,8 @@ CREATE TABLE IF NOT EXISTS project_documents (
   CONSTRAINT fk_pd_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS group_messages (
+-- Chat messages table: project group chat (fixed from group_messages)
+CREATE TABLE IF NOT EXISTS chat_messages (
   id INT AUTO_INCREMENT PRIMARY KEY,
   project_id INT NOT NULL,
   user_id INT NOT NULL,
@@ -80,6 +73,7 @@ CREATE TABLE IF NOT EXISTS group_messages (
   CONSTRAINT fk_chat_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Direct messages table: 1-on-1 user messaging
 CREATE TABLE IF NOT EXISTS direct_messages (
   id INT AUTO_INCREMENT PRIMARY KEY,
   from_user_id INT NOT NULL,
@@ -90,6 +84,7 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   CONSTRAINT fk_dm_to_user FOREIGN KEY (to_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Project invitations table: pending membership invitations
 CREATE TABLE IF NOT EXISTS project_invitations (
   id INT AUTO_INCREMENT PRIMARY KEY,
   project_id INT NOT NULL,
@@ -105,11 +100,11 @@ CREATE TABLE IF NOT EXISTS project_invitations (
   CONSTRAINT fk_pi_invitee FOREIGN KEY (invitee_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Contribution logs table: analytics tracking for user activity
 CREATE TABLE IF NOT EXISTS contribution_logs (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   project_id INT NOT NULL,
-  page_number INT NOT NULL,
   action_type VARCHAR(40) NOT NULL,
   word_count INT DEFAULT 0,
   time_spent INT DEFAULT 0,

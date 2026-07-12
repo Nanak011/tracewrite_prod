@@ -134,7 +134,7 @@ async function ensureSchema() {
       id INT AUTO_INCREMENT PRIMARY KEY,
       user_id INT NOT NULL,
       email VARCHAR(190) NOT NULL,
-      purpose ENUM('email_verify', 'mfa_login') NOT NULL,
+      purpose ENUM('email_verify', 'mfa_login', 'password_reset') NOT NULL,
       challenge_token VARCHAR(120) NULL,
       otp_hash VARCHAR(255) NOT NULL,
       attempts INT NOT NULL DEFAULT 0,
