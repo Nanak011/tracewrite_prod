@@ -334,7 +334,7 @@ async function formatLive(req, res) {
 
       const docId = `formatted_${projectId}_${timestamp}`;
       global.formattedDocs = global.formattedDocs || {};
-      global.formattedDocs[docId] = { filepath:outputFile, projectId };
+      global.formattedDocs[docId] = { filePath:outputFile, projectId };
 
       let previewHtml = "";
       try {
