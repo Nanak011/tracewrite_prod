@@ -16,6 +16,7 @@ router.post(
 router.get(
   "/:projectId/download/:docId",
   requireAuth,
+  requireProjectMember,
   downloadFormatted
 );
 

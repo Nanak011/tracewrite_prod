@@ -33,8 +33,8 @@ function cleanupOldTempFiles(tempDir) {
     // Prune formattedDocs entries pointing at files that no longer exist,
     // so downloadFormatted gives a clean 404 instead of a stale mapping.
     global.formattedDocs = global.formattedDocs || {};
-    for (const [docId, filePath] of Object.entries(global.formattedDocs)) {
-      if (!fs.existsSync(filePath)) {
+    for (const [docId, entry] of Object.entries(global.formattedDocs)) {
+      if (!fs.existsSync(entry.filePath)) {
         delete global.formattedDocs[docId];
       }
     }
@@ -334,7 +334,7 @@ async function formatLive(req, res) {
 
       const docId = `formatted_${projectId}_${timestamp}`;
       global.formattedDocs = global.formattedDocs || {};
-      global.formattedDocs[docId] = outputFile;
+      global.formattedDocs[docId] = { filepath:outputFile, projectId };
 
       let previewHtml = "";
       try {
@@ -448,12 +448,15 @@ async function downloadFormatted(req, res) {
     const docId = req.params.docId;
 
     global.formattedDocs = global.formattedDocs || {};
-    const filePath = global.formattedDocs[docId];
+    const entry = global.formattedDocs[docId];
 
-    if (!filePath || !fs.existsSync(filePath)) {
+    if (!entry || !fs.existsSync(entry.filePath)) {
       return res.status(404).json({ error: "Formatted document not found" });
     }
-
+    
+    if(Number(entry.projectId) !== Number(req.projectId)) {
+      return res.status(403).json({ error: "Access denied for this document" });
+    }
     // NOTE: this used to delete the file 5 seconds after every single
     // download, which is what made "click Download again" fail with a
     // confusing 404 - it wasn't a deliberate one-download limit, just
@@ -461,7 +464,7 @@ async function downloadFormatted(req, res) {
     // age-based sweep (see ensureCleanupInterval) instead, so the same
     // file can be downloaded as many times as needed within its
     // lifetime window.
-    res.download(filePath, "formatted_document.docx", (err) => {
+    res.download(entry.filePath, "formatted_document.docx", (err) => {
       if (err) {
         console.error("Download error:", err);
       }
